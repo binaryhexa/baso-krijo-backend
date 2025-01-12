@@ -75,6 +75,126 @@ app.post("/api/menu", upload.single("image"), (req, res) => {
   });
 });
 
+app.post("/api/checkout", (req, res) => {
+  const {
+    nama_pembeli,
+    menu,
+    metode_pembayaran,
+    total_harga,
+    cash_dibayar,
+    kembalian,
+  } = req.body;
+
+  if (!nama_pembeli || !menu || menu.length === 0 || !metode_pembayaran) {
+    return res.status(400).json({ success: false, message: "Data tidak valid" });
+  }
+
+  const orderQuery = `
+    INSERT INTO orders (nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian)
+    VALUES (?, ?, ?, ?, ?)
+  `;
+
+  db.query(
+    orderQuery,
+    [nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian],
+    (err, result) => {
+      if (err) {
+        console.error("Gagal menyimpan pesanan:", err);
+        return res.status(500).json({ success: false, message: "Gagal membuat pesanan" });
+      }
+
+      const orderId = result.insertId;
+
+      const orderDetailsQuery = `
+        INSERT INTO order_details (id_order, id_menu, nama_menu, harga, jumlah)
+        VALUES ?
+      `;
+
+      const orderDetailsData = menu.map((item) => [
+        orderId,
+        item.id_menu,
+        item.nama_menu,
+        item.harga,
+        item.jumlah,
+      ]);
+
+      db.query(orderDetailsQuery, [orderDetailsData], (err) => {
+        if (err) {
+          console.error("Gagal menyimpan detail pesanan:", err);
+          return res
+            .status(500)
+            .json({ success: false, message: "Gagal menyimpan detail pesanan" });
+        }
+
+        res.status(200).json({
+          success: true,
+          message: "Pesanan berhasil dibuat",
+          data: {
+            id_pesanan: orderId,
+            nama_pembeli,
+            menu,
+            metode_pembayaran,
+            total_harga,
+            cash_dibayar,
+            kembalian,
+          },
+        });
+      });
+    }
+  );
+});
+
+app.get("/api/orders", (req, res) => {
+  const { orderId } = req.query;
+
+  let query = `
+    SELECT 
+      o.id AS id_pesanan, 
+      o.nama_pembeli, 
+      o.metode_pembayaran, 
+      o.total_harga, 
+      o.cash_dibayar, 
+      o.kembalian, 
+      GROUP_CONCAT(JSON_OBJECT(
+        'id_menu', od.id_menu,
+        'nama_menu', od.nama_menu,
+        'harga', od.harga,
+        'jumlah', od.jumlah
+      )) AS menu_details
+    FROM orders o
+    LEFT JOIN order_details od ON o.id = od.id_order
+  `;
+
+  const queryParams = [];
+
+  if (orderId) {
+    query += " WHERE o.id = ?";
+    queryParams.push(orderId);
+  }
+
+  query += " GROUP BY o.id";
+
+  db.query(query, queryParams, (err, results) => {
+    if (err) {
+      console.error("Gagal mendapatkan pesanan:", err);
+      return res.status(500).json({ success: false, message: "Gagal mendapatkan pesanan" });
+    }
+
+    const orders = results.map(order => ({
+      id_pesanan: order.id_pesanan,
+      nama_pembeli: order.nama_pembeli,
+      metode_pembayaran: order.metode_pembayaran,
+      total_harga: order.total_harga,
+      cash_dibayar: order.cash_dibayar,
+      kembalian: order.kembalian,
+      menu_details: JSON.parse(`[${order.menu_details}]`), 
+    }));
+
+    res.status(200).json({ success: true, data: orders });
+  });
+});
+
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
