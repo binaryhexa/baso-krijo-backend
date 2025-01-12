@@ -7,7 +7,7 @@ const mysql = require("mysql");
 require("dotenv").config();
 
 const app = express();
-const PORT = 5000;
+// const PORT = 5000;
 
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
@@ -63,7 +63,7 @@ app.post("/api/menu", upload.single("image"), (req, res) => {
     return res.status(400).json({ error: "Semua form harus diisi: name, harga, image_link, category" });
   }
 
-  const image_link = `http://localhost:5000/public/images/${req.file.filename}`;
+  const image_link = `https://baso-krijo-backend.vercel.app/public/images/${req.file.filename}`;
   const query = "INSERT INTO menu_items (name, harga, image_link, category) VALUES (?, ?, ?, ?)";
 
   db.query(query, [name, parseInt(harga, 10), image_link, category], (err, results) => {
@@ -211,5 +211,5 @@ app.get("/api/orders", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on https://baso-krijo-backend.vercel.app/`);
 });
