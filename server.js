@@ -83,20 +83,30 @@ app.post("/api/checkout", (req, res) => {
     total_harga,
     cash_dibayar,
     kembalian,
+    jenis_pesanan,
+    status_pesanan,
   } = req.body;
 
-  if (!nama_pembeli || !menu || menu.length === 0 || !metode_pembayaran) {
+  if (!nama_pembeli || !menu || menu.length === 0 || !metode_pembayaran || !jenis_pesanan || !status_pesanan) {
     return res.status(400).json({ success: false, message: "Data tidak valid" });
   }
 
   const orderQuery = `
-    INSERT INTO orders (nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO orders (nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `;
 
   db.query(
     orderQuery,
-    [nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian],
+    [
+      nama_pembeli,
+      metode_pembayaran,
+      total_harga,
+      cash_dibayar,
+      kembalian,
+      jenis_pesanan,
+      status_pesanan,
+    ],
     (err, result) => {
       if (err) {
         console.error("Gagal menyimpan pesanan:", err);
@@ -137,6 +147,8 @@ app.post("/api/checkout", (req, res) => {
             total_harga,
             cash_dibayar,
             kembalian,
+            jenis_pesanan,
+            status_pesanan,
           },
         });
       });
@@ -155,6 +167,8 @@ app.get("/api/orders", (req, res) => {
       o.total_harga, 
       o.cash_dibayar, 
       o.kembalian, 
+      o.jenis_pesanan,
+      o.status_pesanan,
       GROUP_CONCAT(JSON_OBJECT(
         'id_menu', od.id_menu,
         'nama_menu', od.nama_menu,
@@ -187,13 +201,14 @@ app.get("/api/orders", (req, res) => {
       total_harga: order.total_harga,
       cash_dibayar: order.cash_dibayar,
       kembalian: order.kembalian,
+      jenis_pesanan: order.jenis_pesanan,
+      status_pesanan: order.status_pesanan,
       menu_details: JSON.parse(`[${order.menu_details}]`), 
     }));
 
     res.status(200).json({ success: true, data: orders });
   });
 });
-
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
