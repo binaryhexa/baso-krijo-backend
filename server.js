@@ -3,17 +3,32 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const multer = require("multer");
 const path = require("path");
+const mysql = require("mysql");
+require("dotenv").config();
 
 const app = express();
 const PORT = 5000;
 
-// Konfigurasi multer untuk menyimpan file gambar
+const db = mysql.createConnection({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  database: process.env.DB_NAME,
+});
+
+db.connect((err) => {
+  if (err) {
+    console.error("Koneksi ke database gagal:", err);
+  } else {
+    console.log("Koneksi ke database berhasil.");
+  }
+});
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, "./public/images");
   },
   filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
+    cb(null, `${file.originalname}`);
   },
 });
 const upload = multer({ storage });
@@ -22,16 +37,25 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use("/public", express.static(path.join(__dirname, "public")));
 
-let menuItems = [
-  { id: 1, name: "Bakso Mercon", harga: 15000, image_link: "http://localhost:5000/public/images/Mercon.jpg", category: "Makanan" },
-  { id: 2, name: "Bakso Tetelan", harga: 15000, image_link: "http://localhost:5000/public/images/Bakso.jpeg", category: "Makanan" },
-  { id: 3, name: "Es Teh Manis", harga: 5000, image_link: "http://localhost:5000/public/images/TehManis.jpg", category: "Minuman" },
-  { id: 4, name: "Es Jeruk", harga: 7000, image_link: "http://localhost:5000/public/images/EsJeruk.jpg", category: "Minuman" },
-  { id: 5, name: "Kerupuk", harga: 2000, image_link: "http://localhost:5000/public/images/Kerupuk.jpg", category: "Toping" },
-  { id: 6, name: "Bawang Goreng", harga: 1000, image_link: "http://localhost:5000/public/images/BawangGoreng.jpeg", category: "Toping" },
-];
+app.get("/api/menu", (req, res) => {
+  const { category } = req.query;
 
-// Endpoint untuk create menu baru
+  let query = "SELECT * FROM menu_items";
+  const queryParams = [];
+
+  if (category && category !== "Semua Menu") {
+    query += " WHERE category = ?";
+    queryParams.push(category);
+  }
+
+  db.query(query, queryParams, (err, results) => {
+    if (err) {
+      return res.status(500).json({ error: "Database error", details: err });
+    }
+    res.json(results);
+  });
+});
+
 app.post("/api/menu", upload.single("image"), (req, res) => {
   const { name, harga, category } = req.body;
 
@@ -39,34 +63,18 @@ app.post("/api/menu", upload.single("image"), (req, res) => {
     return res.status(400).json({ error: "Semua form harus diisi: name, harga, image_link, category" });
   }
 
-  const newMenuItem = {
-    id: menuItems.length + 1,
-    name,
-    harga: parseInt(harga, 10),
-    category,
-    image_link: `http://localhost:5000/public/images/${req.file.filename}`,
-  };
+  const image_link = `http://localhost:5000/public/images/${req.file.filename}`;
+  const query = "INSERT INTO menu_items (name, harga, image_link, category) VALUES (?, ?, ?, ?)";
 
-  menuItems.push(newMenuItem);
-  res.status(201).json({ message: "Menu berhasil di tambahkan", data: newMenuItem });
-});
-
-// Endpoint untuk get semua menu
-app.get("/api/menu", (req, res) => {
-  const { category } = req.query;
-
-  if (category) {
-    if (category === "Semua Menu") {
-      return res.json(menuItems);
+  db.query(query, [name, parseInt(harga, 10), image_link, category], (err, results) => {
+    if (err) {
+      return res.status(500).json({ error: "Database error", details: err });
     }
-    const filteredItems = menuItems.filter((item) => item.category === category);
-    return res.json(filteredItems);
-  }
 
-  res.json(menuItems);
+    res.status(201).json({ message: "Menu berhasil ditambahkan", data: { id: results.insertId, name, harga, category, image_link } });
+  });
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
