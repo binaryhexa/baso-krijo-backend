@@ -215,6 +215,35 @@ app.get("/api/orders", (req, res) => {
   });
 });
 
+app.patch("/api/orders/:orderId", (req, res) => {
+  const { orderId } = req.params;
+  const { status_pesanan } = req.body; 
+
+  if (!status_pesanan) {
+    return res.status(400).json({ success: false, message: "Status pesanan harus diberikan" });
+  }
+
+  const query = "UPDATE orders SET status_pesanan = ? WHERE id = ?";
+  
+  db.query(query, [status_pesanan, orderId], (err, result) => {
+    if (err) {
+      console.error("Gagal mengupdate status pesanan:", err);
+      return res.status(500).json({ success: false, message: "Gagal mengupdate status pesanan" });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "Pesanan tidak ditemukan" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Status pesanan berhasil diubah",
+      data: { id_pesanan: orderId, status_pesanan },
+    });
+  });
+});
+
+
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
