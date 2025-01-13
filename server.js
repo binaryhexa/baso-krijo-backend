@@ -7,7 +7,7 @@ const mysql = require("mysql");
 require("dotenv").config();
 
 const app = express();
-// const PORT = 5000;
+const PORT = 5000;
 
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
@@ -63,7 +63,7 @@ app.post("/api/menu", upload.single("image"), (req, res) => {
     return res.status(400).json({ error: "Semua form harus diisi: name, harga, image_link, category" });
   }
 
-  const image_link = `https://baso-krijo-backend.vercel.app/public/images/${req.file.filename}`;
+  const image_link = `http://localhost:5000/public/images/${req.file.filename}`;
   const query = "INSERT INTO menu_items (name, harga, image_link, category) VALUES (?, ?, ?, ?)";
 
   db.query(query, [name, parseInt(harga, 10), image_link, category], (err, results) => {
@@ -169,14 +169,17 @@ app.get("/api/orders", (req, res) => {
       o.kembalian, 
       o.jenis_pesanan,
       o.status_pesanan,
+      o.created_at,
       GROUP_CONCAT(JSON_OBJECT(
         'id_menu', od.id_menu,
         'nama_menu', od.nama_menu,
         'harga', od.harga,
-        'jumlah', od.jumlah
+        'jumlah', od.jumlah,
+        'image_link', mi.image_link
       )) AS menu_details
     FROM orders o
     LEFT JOIN order_details od ON o.id = od.id_order
+    LEFT JOIN menu_items mi ON od.id_menu = mi.id
   `;
 
   const queryParams = [];
@@ -186,7 +189,8 @@ app.get("/api/orders", (req, res) => {
     queryParams.push(orderId);
   }
 
-  query += " GROUP BY o.id";
+  // Menambahkan sorting berdasarkan created_at untuk urutan terbaru
+  query += " GROUP BY o.id ORDER BY o.created_at DESC"; // Urutkan berdasarkan waktu terbaru
 
   db.query(query, queryParams, (err, results) => {
     if (err) {
@@ -203,13 +207,15 @@ app.get("/api/orders", (req, res) => {
       kembalian: order.kembalian,
       jenis_pesanan: order.jenis_pesanan,
       status_pesanan: order.status_pesanan,
-      menu_details: JSON.parse(`[${order.menu_details}]`), 
+      created_at: order.created_at,  // Menyertakan informasi waktu pembuatan pesanan
+      menu_details: JSON.parse(`[${order.menu_details}]`),
     }));
 
     res.status(200).json({ success: true, data: orders });
   });
 });
 
+
 app.listen(PORT, () => {
-  console.log(`Server running on https://baso-krijo-backend.vercel.app/`);
+  console.log(`Server running on http://localhost:${PORT}`);
 });
