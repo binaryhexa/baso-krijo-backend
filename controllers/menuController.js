@@ -100,9 +100,33 @@ const updateMenu = (req, res) => {
   });
 };
 
+const deleteMenu = (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ error: "Menu ID harus disertakan" });
+  }
+
+  const query = "DELETE FROM menu_items WHERE id = ?";
+
+  db.query(query, [id], (err, results) => {
+    if (err) {
+      console.error("Gagal menghapus menu:", err);
+      return res.status(500).json({ error: "Database error", details: err });
+    }
+
+    if (results.affectedRows === 0) {
+      return res.status(404).json({ error: "Menu tidak ditemukan" });
+    }
+
+    res.status(200).json({ message: "Menu berhasil dihapus" });
+  });
+};
+
 module.exports = {
   getAllMenus,
   getMenuById,
   createMenu,
-  updateMenu
+  updateMenu,
+  deleteMenu, 
 };
