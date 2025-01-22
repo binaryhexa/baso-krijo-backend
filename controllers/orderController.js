@@ -203,102 +203,152 @@ const updateOrderStatus = (req, res) => {
   });
 };
 
-// Modifikasi serupa untuk fungsi checkout
-const checkout = async (req, res) => {
-    const {
-      nama_pembeli,
-      menu,
-      metode_pembayaran,
-      total_harga,
-      cash_dibayar,
-      kembalian,
-      jenis_pesanan,
-      status_pesanan,
-    } = req.body;
-  
-    if (!nama_pembeli || !menu || menu.length === 0 || !metode_pembayaran || !jenis_pesanan || !status_pesanan) {
-      return res.status(400).json({ success: false, message: "Data tidak valid" });
-    }
-  
-    try {
-      const kode_pesanan = await generateOrderCode();
-  
-      const orderQuery = `
-        INSERT INTO orders (kode_pesanan, nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `;
-  
-      db.query(
-        orderQuery,
-        [
-          kode_pesanan,
-          nama_pembeli,
-          metode_pembayaran,
-          total_harga,
-          cash_dibayar,
-          kembalian,
-          jenis_pesanan,
-          status_pesanan,
-        ],
-        (err, result) => {
-          if (err) {
-            console.error("Gagal menyimpan pesanan:", err);
-            return res.status(500).json({ success: false, message: "Gagal membuat pesanan" });
-          }
-  
-          const orderId = result.insertId;
-  
-          const orderDetailsQuery = `
-            INSERT INTO order_details (id_order, id_menu, nama_menu, harga, jumlah)
-            VALUES ?
-          `;
-  
-          const orderDetailsData = menu.map((item) => [
-            orderId,
-            item.id_menu,
-            item.nama_menu,
-            item.harga,
-            item.jumlah,
-          ]);
-  
-          db.query(orderDetailsQuery, [orderDetailsData], (err) => {
+const updateMenuStock = (menuItems) => {
+  return new Promise((resolve, reject) => {
+    // Start a transaction to ensure stock updates are atomic
+    db.beginTransaction((err) => {
+      if (err) {
+        return reject(err);
+      }
+
+      const updatePromises = menuItems.map((item) => {
+        return new Promise((resolveItem, rejectItem) => {
+          // First check if enough stock is available
+          const checkStockQuery = "SELECT stok FROM menu_items WHERE id = ?";
+          db.query(checkStockQuery, [item.id_menu], (err, results) => {
             if (err) {
-              console.error("Gagal menyimpan detail pesanan:", err);
-              return res
-                .status(500)
-                .json({ success: false, message: "Gagal menyimpan detail pesanan" });
+              return rejectItem(err);
             }
-  
-            res.status(200).json({
-              success: true,
-              message: "Pesanan berhasil dibuat",
-              data: {
-                id_pesanan: orderId,
-                kode_pesanan,
-                nama_pembeli,
-                menu,
-                metode_pembayaran,
-                total_harga,
-                cash_dibayar,
-                kembalian,
-                jenis_pesanan,
-                status_pesanan,
-              },
+
+            if (!results[0] || results[0].stok < item.jumlah) {
+              return rejectItem(new Error(`Stok tidak cukup untuk menu: ${item.nama_menu}`));
+            }
+
+            // Update stock
+            const updateQuery = "UPDATE menu_items SET stok = stok - ? WHERE id = ?";
+            db.query(updateQuery, [item.jumlah, item.id_menu], (err) => {
+              if (err) {
+                return rejectItem(err);
+              }
+              resolveItem();
             });
           });
+        });
+      });
+
+      Promise.all(updatePromises)
+        .then(() => {
+          db.commit((err) => {
+            if (err) {
+              return db.rollback(() => reject(err));
+            }
+            resolve();
+          });
+        })
+        .catch((error) => {
+          db.rollback(() => reject(error));
+        });
+    });
+  });
+};
+
+const checkout = async (req, res) => {
+  const {
+    nama_pembeli,
+    menu,
+    metode_pembayaran,
+    total_harga,
+    cash_dibayar,
+    kembalian,
+    jenis_pesanan,
+    status_pesanan,
+  } = req.body;
+
+  if (!nama_pembeli || !menu || menu.length === 0 || !metode_pembayaran || !jenis_pesanan || !status_pesanan) {
+    return res.status(400).json({ success: false, message: "Data tidak valid" });
+  }
+
+  try {
+    // Update stock first
+    await updateMenuStock(menu);
+    
+    const kode_pesanan = await generateOrderCode();
+
+    const orderQuery = `
+      INSERT INTO orders (kode_pesanan, nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    db.query(
+      orderQuery,
+      [
+        kode_pesanan,
+        nama_pembeli,
+        metode_pembayaran,
+        total_harga,
+        cash_dibayar,
+        kembalian,
+        jenis_pesanan,
+        status_pesanan,
+      ],
+      (err, result) => {
+        if (err) {
+          console.error("Gagal menyimpan pesanan:", err);
+          return res.status(500).json({ success: false, message: "Gagal membuat pesanan" });
         }
-      );
-    } catch (error) {
-      console.error("Error generating order code:", error);
-      return res.status(500).json({ success: false, message: "Gagal membuat kode pesanan" });
-    }
-  };
-  
-  
-  module.exports = {
-    createOrder,
-    getAllOrders,
-    updateOrderStatus,
-    checkout  
-  };
+
+        const orderId = result.insertId;
+        const orderDetailsQuery = `
+          INSERT INTO order_details (id_order, id_menu, nama_menu, harga, jumlah)
+          VALUES ?
+        `;
+
+        const orderDetailsData = menu.map((item) => [
+          orderId,
+          item.id_menu,
+          item.nama_menu,
+          item.harga,
+          item.jumlah,
+        ]);
+
+        db.query(orderDetailsQuery, [orderDetailsData], (err) => {
+          if (err) {
+            console.error("Gagal menyimpan detail pesanan:", err);
+            return res.status(500).json({ success: false, message: "Gagal menyimpan detail pesanan" });
+          }
+
+          res.status(200).json({
+            success: true,
+            message: "Pesanan berhasil dibuat",
+            data: {
+              id_pesanan: orderId,
+              kode_pesanan,
+              nama_pembeli,
+              menu,
+              metode_pembayaran,
+              total_harga,
+              cash_dibayar,
+              kembalian,
+              jenis_pesanan,
+              status_pesanan,
+            },
+          });
+        });
+      }
+    );
+  } catch (error) {
+    console.error("Error during checkout:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || "Gagal membuat pesanan" 
+    });
+  }
+};
+
+module.exports = {
+  createOrder,
+  getAllOrders,
+  updateOrderStatus,
+  checkout
+};
   
