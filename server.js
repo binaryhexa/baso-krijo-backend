@@ -11,7 +11,7 @@ const stokRoutes = require('./routes/stokRoutes');
 const bahanBakuRoutes = require('./routes/bahanBakuRoutes');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT;
 
 app.use(cors());
 app.use(bodyParser.json());
