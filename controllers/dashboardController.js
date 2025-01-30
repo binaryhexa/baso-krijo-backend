@@ -48,16 +48,27 @@ const getDashboardData = (req, res) => {
 };
 
 const getSalesReport = (req, res) => {
-  const query = `
+  const { startDate, endDate } = req.query;
+  
+  let query = `
     SELECT mi.name AS menu_name, 
            SUM(od.jumlah) AS quantity, 
            mi.harga AS price
     FROM order_details od
     JOIN menu_items mi ON od.id_menu = mi.id
-    GROUP BY od.id_menu
-  `;
+    JOIN orders o ON od.id_order = o.id`;
+  if (startDate && endDate) {
+    query += ` WHERE DATE(o.created_at) BETWEEN ? AND ?`;
+  }
 
-  db.query(query, (err, results) => {
+  query += ` GROUP BY od.id_menu`;
+
+  const queryParams = startDate && endDate ? [startDate, endDate] : [];
+
+  console.log('Query:', query);
+  console.log('Parameters:', queryParams);
+
+  db.query(query, queryParams, (err, results) => {
     if (err) {
       console.error("Error fetching sales data:", err);
       return res.status(500).json({ error: 'Failed to fetch sales report data' });
@@ -70,6 +81,9 @@ const getSalesReport = (req, res) => {
     }));
 
     const totalPrice = reportData.reduce((sum, item) => sum + item.total_price, 0);
+
+    console.log('Report Data:', reportData);
+    console.log('Total Price:', totalPrice);
 
     res.json({ reportData, totalPrice });
   });
