@@ -292,13 +292,20 @@ const checkout = async (req, res) => {
       INSERT INTO order_details (id_order, id_menu, nama_menu, harga, jumlah)
       VALUES ?
     `;
-    const orderDetailsData = menu.map(item => [
-      orderId,
-      item.id_menu,
-      item.nama_menu,
-      item.harga,
-      item.jumlah,
-    ]);
+    
+    const orderDetailsData = menu.map(item => {
+      if (!item.id_menu || !item.nama_menu || !item.harga || !item.jumlah) {
+        throw new Error("Incomplete menu item data.");
+      }
+      return [
+        orderId,
+        item.id_menu,
+        item.nama_menu,
+        item.harga,
+        item.jumlah,
+      ];
+    });
+    
 
     await new Promise((resolve, reject) => {
       connection.query(orderDetailsQuery, [orderDetailsData], (err) => {
@@ -347,11 +354,6 @@ const checkout = async (req, res) => {
 // Updated updateMenuStock function for using transactions with connection object
 const updateMenuStock = (menuItems, connection) => {
   return new Promise((resolve, reject) => {
-    // Start a transaction to ensure stock updates are atomic
-    connection.beginTransaction((err) => {
-      if (err) {
-        return reject(err);
-      }
 
       const updatePromises = menuItems.map((item) => {
         return new Promise((resolveItem, rejectItem) => {
@@ -391,7 +393,6 @@ const updateMenuStock = (menuItems, connection) => {
           connection.rollback(() => reject(error));
         });
     });
-  });
 };
 
 module.exports = {
