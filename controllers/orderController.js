@@ -1,119 +1,161 @@
 const db = require("../config/database");
 
 const generateOrderCode = async () => {
-    const today = new Date();
-    const date = today.getDate().toString().padStart(2, '0');
-    const month = (today.getMonth() + 1).toString().padStart(2, '0');
-    const year = today.getFullYear().toString().slice(-2);
-    const dateCode = `${date}${month}${year}`;
-  
-    const countQuery = `
-      SELECT COUNT(*) as count 
-      FROM orders 
-      WHERE DATE(created_at) = CURDATE()
-    `;
-  
-    return new Promise((resolve, reject) => {
-      db.query(countQuery, (err, results) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        
-        const count = results[0].count + 1; 
-        const orderNumber = count.toString().padStart(3, '0');
-        const orderCode = `PSN-${dateCode}${orderNumber}`;
-        resolve(orderCode);
+  const today = new Date();
+  const date = today.getDate().toString().padStart(2, '0');
+  const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const year = today.getFullYear().toString().slice(-2);
+  const dateCode = `${date}${month}${year}`;
+
+  const countQuery = `
+    SELECT COUNT(*) as count 
+    FROM orders 
+    WHERE DATE(created_at) = CURDATE()
+  `;
+
+  return new Promise((resolve, reject) => {
+    db.query(countQuery, (err, results) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      
+      const count = results[0].count + 1;
+      const orderNumber = count.toString().padStart(3, '0');
+      const orderCode = `PSN-${dateCode}${orderNumber}`;
+      resolve(orderCode);
+    });
+  });
+};
+
+const createOrder = async (req, res) => {
+  const {
+    nama_pembeli,
+    menu,
+    metode_pembayaran,
+    total_harga,
+    cash_dibayar,
+    kembalian,
+    jenis_pesanan,
+    status_pesanan,
+  } = req.body;
+
+  if (!nama_pembeli || !menu || menu.length === 0 || !metode_pembayaran || !jenis_pesanan || !status_pesanan) {
+    return res.status(400).json({ success: false, message: "Data tidak valid" });
+  }
+
+  const connection = db; // DB connection
+
+  try {
+    // Mulai transaksi
+    await new Promise((resolve, reject) => {
+      connection.beginTransaction(err => {
+        if (err) reject(err);
+        else resolve();
       });
     });
-  };
-  
-  const createOrder = async (req, res) => {
-    const {
-      nama_pembeli,
-      menu,
-      metode_pembayaran,
-      total_harga,
-      cash_dibayar,
-      kembalian,
-      jenis_pesanan,
-      status_pesanan,
-    } = req.body;
-  
-    if (!nama_pembeli || !menu || menu.length === 0 || !metode_pembayaran || !jenis_pesanan || !status_pesanan) {
-      return res.status(400).json({ success: false, message: "Data tidak valid" });
+
+    // Periksa stok dan kurangi stok menu
+    for (const item of menu) {
+      const checkStockQuery = `SELECT stok FROM menu_items WHERE id = ?`;
+      const [checkResult] = await new Promise((resolve, reject) => {
+        connection.query(checkStockQuery, [item.id_menu], (err, result) => {
+          if (err) return reject(err);
+          resolve(result);
+        });
+      });
+
+      if (!checkResult || checkResult.stok < item.jumlah) {
+        throw new Error(`Stok tidak cukup untuk menu: ${item.nama_menu}`);
+      }
+
+      const updateStockQuery = `UPDATE menu_items SET stok = stok - ? WHERE id = ?`;
+      await new Promise((resolve, reject) => {
+        connection.query(updateStockQuery, [item.jumlah, item.id_menu], (err) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      });
     }
-  
-    try {
-      const kode_pesanan = await generateOrderCode();
-  
-      const orderQuery = `
-        INSERT INTO orders (kode_pesanan, nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `;
-  
-      db.query(
+
+    // Generate kode pesanan
+    const kode_pesanan = await generateOrderCode();
+
+    const orderQuery = `
+      INSERT INTO orders (kode_pesanan, nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    const [result] = await new Promise((resolve, reject) => {
+      connection.query(
         orderQuery,
-        [
-          kode_pesanan,
-          nama_pembeli,
-          metode_pembayaran,
-          total_harga,
-          cash_dibayar,
-          kembalian,
-          jenis_pesanan,
-          status_pesanan,
-        ],
+        [kode_pesanan, nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan],
         (err, result) => {
-          if (err) {
-            console.error("Gagal menyimpan pesanan:", err);
-            return res.status(500).json({ success: false, message: "Gagal membuat pesanan" });
-          }
-  
-          const orderId = result.insertId;
-          const orderDetailsQuery = `
-            INSERT INTO order_details (id_order, id_menu, nama_menu, harga, jumlah)
-            VALUES ?
-          `;
-  
-          const orderDetailsData = menu.map((item) => [
-            orderId,
-            item.id_menu,
-            item.nama_menu,
-            item.harga,
-            item.jumlah,
-          ]);
-  
-          db.query(orderDetailsQuery, [orderDetailsData], (err) => {
-            if (err) {
-              console.error("Gagal menyimpan detail pesanan:", err);
-              return res.status(500).json({ success: false, message: "Gagal menyimpan detail pesanan" });
-            }
-  
-            res.status(200).json({
-              success: true,
-              message: "Pesanan berhasil dibuat",
-              data: {
-                id_pesanan: orderId,
-                kode_pesanan,
-                nama_pembeli,
-                menu,
-                metode_pembayaran,
-                total_harga,
-                cash_dibayar,
-                kembalian,
-                jenis_pesanan,
-                status_pesanan,
-              },
-            });
-          });
+          if (err) return reject(err);
+          resolve(result);
         }
       );
-    } catch (error) {
-      console.error("Error generating order code:", error);
-      return res.status(500).json({ success: false, message: "Gagal membuat kode pesanan" });
-    }
-  };
+    });
+
+    const orderId = result.insertId;
+
+    const orderDetailsQuery = `
+      INSERT INTO order_details (id_order, id_menu, nama_menu, harga, jumlah)
+      VALUES ?
+    `;
+
+    const orderDetailsData = menu.map(item => [
+      orderId,
+      item.id_menu,
+      item.nama_menu,
+      item.harga,
+      item.jumlah,
+    ]);
+
+    await new Promise((resolve, reject) => {
+      connection.query(orderDetailsQuery, [orderDetailsData], (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+
+    // Commit transaksi
+    await new Promise((resolve, reject) => {
+      connection.commit(err => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Pesanan berhasil dibuat",
+      data: {
+        id_pesanan: orderId,
+        kode_pesanan,
+        nama_pembeli,
+        menu,
+        metode_pembayaran,
+        total_harga,
+        cash_dibayar,
+        kembalian,
+        jenis_pesanan,
+        status_pesanan,
+      },
+    });
+  } catch (error) {
+    // Rollback jika ada kesalahan
+    await new Promise((resolve, reject) => {
+      connection.rollback(() => {
+        reject(error);
+      });
+    });
+
+    console.error("Error creating order:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 
 const getAllOrders = (req, res) => {
   const { orderId } = req.query;
