@@ -44,117 +44,90 @@ const createOrder = async (req, res) => {
     return res.status(400).json({ success: false, message: "Data tidak valid" });
   }
 
-  const connection = db; // DB connection
-
   try {
-    // Mulai transaksi
-    await new Promise((resolve, reject) => {
-      connection.beginTransaction(err => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    // Ambil koneksi dari pool
+    const connection = await db.promise().getConnection();
 
-    // Periksa stok dan kurangi stok menu
-    for (const item of menu) {
-      const checkStockQuery = `SELECT stok FROM menu_items WHERE id = ?`;
-      const [checkResult] = await new Promise((resolve, reject) => {
-        connection.query(checkStockQuery, [item.id_menu], (err, result) => {
-          if (err) return reject(err);
-          resolve(result);
-        });
-      });
+    try {
+      // Mulai transaksi
+      await connection.beginTransaction();
 
-      if (!checkResult || checkResult.stok < item.jumlah) {
-        throw new Error(`Stok tidak cukup untuk menu: ${item.nama_menu}`);
+      // Periksa stok dan kurangi stok menu
+      for (const item of menu) {
+        const checkStockQuery = `SELECT stok FROM menu_items WHERE id = ?`;
+        const [checkResult] = await connection.execute(checkStockQuery, [item.id_menu]);
+
+        if (!checkResult.length || checkResult[0].stok < item.jumlah) {
+          throw new Error(`Stok tidak cukup untuk menu: ${item.nama_menu}`);
+        }
+
+        const updateStockQuery = `UPDATE menu_items SET stok = stok - ? WHERE id = ?`;
+        await connection.execute(updateStockQuery, [item.jumlah, item.id_menu]);
       }
 
-      const updateStockQuery = `UPDATE menu_items SET stok = stok - ? WHERE id = ?`;
-      await new Promise((resolve, reject) => {
-        connection.query(updateStockQuery, [item.jumlah, item.id_menu], (err) => {
-          if (err) return reject(err);
-          resolve();
-        });
-      });
-    }
+      // Generate kode pesanan
+      const kode_pesanan = await generateOrderCode();
 
-    // Generate kode pesanan
-    const kode_pesanan = await generateOrderCode();
+      const orderQuery = `
+        INSERT INTO orders (kode_pesanan, nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `;
 
-    const orderQuery = `
-      INSERT INTO orders (kode_pesanan, nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    const [result] = await new Promise((resolve, reject) => {
-      connection.query(
+      const [result] = await connection.execute(
         orderQuery,
-        [kode_pesanan, nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan],
-        (err, result) => {
-          if (err) return reject(err);
-          resolve(result);
-        }
+        [kode_pesanan, nama_pembeli, metode_pembayaran, total_harga, cash_dibayar, kembalian, jenis_pesanan, status_pesanan]
       );
-    });
 
-    const orderId = result.insertId;
+      const orderId = result.insertId;
 
-    const orderDetailsQuery = `
-      INSERT INTO order_details (id_order, id_menu, nama_menu, harga, jumlah)
-      VALUES ?
-    `;
+      const orderDetailsQuery = `
+        INSERT INTO order_details (id_order, id_menu, nama_menu, harga, jumlah)
+        VALUES ?
+      `;
 
-    const orderDetailsData = menu.map(item => [
-      orderId,
-      item.id_menu,
-      item.nama_menu,
-      item.harga,
-      item.jumlah,
-    ]);
+      const orderDetailsData = menu.map(item => [
+        orderId,
+        item.id_menu,
+        item.nama_menu,
+        item.harga,
+        item.jumlah,
+      ]);
 
-    await new Promise((resolve, reject) => {
-      connection.query(orderDetailsQuery, [orderDetailsData], (err) => {
-        if (err) return reject(err);
-        resolve();
+      await connection.query(orderDetailsQuery, [orderDetailsData]);
+
+      // Commit transaksi
+      await connection.commit();
+
+      res.status(200).json({
+        success: true,
+        message: "Pesanan berhasil dibuat",
+        data: {
+          id_pesanan: orderId,
+          kode_pesanan,
+          nama_pembeli,
+          menu,
+          metode_pembayaran,
+          total_harga,
+          cash_dibayar,
+          kembalian,
+          jenis_pesanan,
+          status_pesanan,
+        },
       });
-    });
-
-    // Commit transaksi
-    await new Promise((resolve, reject) => {
-      connection.commit(err => {
-        if (err) return reject(err);
-        resolve();
-      });
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Pesanan berhasil dibuat",
-      data: {
-        id_pesanan: orderId,
-        kode_pesanan,
-        nama_pembeli,
-        menu,
-        metode_pembayaran,
-        total_harga,
-        cash_dibayar,
-        kembalian,
-        jenis_pesanan,
-        status_pesanan,
-      },
-    });
+    } catch (error) {
+      // Rollback jika ada kesalahan
+      await connection.rollback();
+      console.error("Error creating order:", error);
+      return res.status(500).json({ success: false, message: error.message });
+    } finally {
+      connection.release(); // Lepaskan koneksi
+    }
   } catch (error) {
-    // Rollback jika ada kesalahan
-    await new Promise((resolve, reject) => {
-      connection.rollback(() => {
-        reject(error);
-      });
-    });
-
-    console.error("Error creating order:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("Koneksi ke database gagal:", error);
+    res.status(500).json({ success: false, message: "Koneksi ke database gagal" });
   }
 };
+
 
 
 const getAllOrders = (req, res) => {
