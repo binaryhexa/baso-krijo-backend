@@ -7,7 +7,10 @@ const db = mysql.createPool({
   user: process.env.MYSQL_ADDON_USER,
   password: process.env.MYSQL_ADDON_PASSWORD,
   port: process.env.MYSQL_ADDON_PORT,
-  ssl: true
+  ssl: {
+    // Konfigurasi SSL yang benar
+    rejectUnauthorized: false
+  }
 });
 
 module.exports = db;
