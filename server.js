@@ -9,6 +9,7 @@ const orderRoutes = require("./routes/orderRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const stokRoutes = require('./routes/stokRoutes');
 const bahanBakuRoutes = require('./routes/bahanBakuRoutes');
+const authRoutes = require('./routes/authRoutes'); 
 
 const app = express();
 const PORT = process.env.DB_PORT || 5000;
@@ -22,6 +23,7 @@ app.use("/api/menu", menuRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/stok", stokRoutes);
+app.use('/api/auth', authRoutes); 
 
 app.get('/', (req, res) => {
   res.json({ message: 'API is running' });
