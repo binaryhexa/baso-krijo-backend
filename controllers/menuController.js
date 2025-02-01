@@ -74,7 +74,7 @@ const updateMenu = (req, res) => {
   const queryParams = [name, parseInt(harga, 10), parseInt(stok, 10), category];
 
   if (req.file) {
-    const image_link = `http://localhost:5000/public/images/${req.file.filename}`;
+    const image_link = `https://baso-krijo-backend.vercel.app/public/images/${req.file.filename}`;
     query += ", image_link = ?";
     queryParams.push(image_link);
   }
