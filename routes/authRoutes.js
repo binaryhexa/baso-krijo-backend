@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const db = require('../config/database');
 
 const router = express.Router();
 
@@ -110,5 +111,63 @@ router.get('/users/:id', (req, res) => {
     res.json(result);
   });
 });
+
+// Update user
+router.put('/users/:id', async (req, res) => {
+  const userId = req.params.id;
+  const { username, password, role } = req.body;
+
+  if (!username || !role) {
+    return res.status(400).json({ message: 'Username dan role harus diisi' });
+  }
+
+  try {
+    let updatedFields = { username, role };
+    
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      updatedFields.password = hashedPassword;
+    }
+
+    db.query(
+      'UPDATE users SET username = ?, password = ?, role = ? WHERE id = ?',
+      [updatedFields.username, updatedFields.password || null, updatedFields.role, userId],
+      (err, result) => {
+        if (err) {
+          console.error('Error update user:', err);
+          return res.status(500).json({ message: 'Terjadi kesalahan di server' });
+        }
+
+        if (result.affectedRows === 0) {
+          return res.status(404).json({ message: 'User tidak ditemukan' });
+        }
+
+        res.status(200).json({ message: 'User berhasil diperbarui' });
+      }
+    );
+  } catch (err) {
+    console.error('Error hashing password:', err);
+    res.status(500).json({ message: 'Terjadi kesalahan di server' });
+  }
+});
+
+// Delete user
+router.delete('/users/:id', (req, res) => {
+  const userId = req.params.id;
+
+  db.query('DELETE FROM users WHERE id = ?', [userId], (err, result) => {
+    if (err) {
+      console.error('Error delete user:', err);
+      return res.status(500).json({ message: 'Terjadi kesalahan di server' });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'User tidak ditemukan' });
+    }
+
+    res.status(200).json({ message: 'User berhasil dihapus' });
+  });
+});
+
 
 module.exports = router;
